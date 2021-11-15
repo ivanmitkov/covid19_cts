@@ -36,6 +36,7 @@ import tensorflow as tf
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics import make_scorer, accuracy_score, roc_auc_score, roc_curve
 from sklearn.cluster import KMeans
+from sklearn.metrics import precision_recall_fscore_support
 
 
 #Data to be loaded as X_train,Y_train and X_test,Y_test with onehot encoded labels
@@ -206,7 +207,26 @@ plt.xlabel('epoch')
 plt.legend(['train', 'test'], loc='upper left')
 plt.show()
 
+
+#auc
+pred_proba = model.predict(X_val)
+pred = pred_proba[:, 1]
+auc_score = roc_auc_score(Y_true, pred)
+fpr, tpr, th = roc_curve(Y_true, pred)
+print('AUC Score:\t', round(auc_score, 2))
+plt.figure(figsize = (7, 5))
+plt.title('ROC Curve')
+plt.plot(fpr, tpr, 'r')
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlabel('False Positive')
+plt.ylabel('True Positive')
+plt.legend(loc = 4)
+plt.show()
+
 # Last Model
-last_model = load_model('kmeans_data_augm_vgg16.h5')
+model = load_model('kmeans_data_augm_vgg16.h5')
 final_loss, final_accuracy = model.evaluate(X_val, Y_val)
 print('Final Loss: {}, Final Accuracy: {}'.format(final_loss, final_accuracy))
+print('Precision:', precision_recall_fscore_support(Y_true, Y_pred, average='weighted')[0])
+print('Recall:', precision_recall_fscore_support(Y_true, Y_pred, average='weighted')[1])
+print('F1:', precision_recall_fscore_support(Y_true, Y_pred, average='weighted')[2])
