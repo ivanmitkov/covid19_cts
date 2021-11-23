@@ -117,33 +117,40 @@ print(f'Y_val:', Y_val.shape)
 """# **VGG16**"""
 EPOCHS = 50
 
-def vgg16():
+def resnet50():
     input_shape = (IMAGE_SIZE, IMAGE_SIZE, 3)
 
-    from tensorflow.keras.applications import VGG16
-    tmodel_base = VGG16(input_shape=input_shape,
-                        include_top=False,
-                        weights='imagenet')
+    from tensorflow.keras.applications.resnet50 import ResNet50
+    tmodel_base = ResNet50(input_shape=input_shape,
+                           include_top=False,
+                           weights='imagenet')
     for layer in tmodel_base.layers:
         layer.trainable = True
 
-    last_layer = tmodel_base.get_layer('block5_pool')
-    last = last_layer.output
+    last = tmodel_base.output
 
-    x = Flatten()(last)
-    x = Dense(512, activation = 'relu')(x)
-    x = Dropout(rate = 0.25)(x)
-    x = Dense(2, activation = 'softmax')(x)
-    #Compiling model
-    model = Model(inputs = tmodel_base.input, outputs = x, name = 'VGG16')
-    opt1 = Adam(lr=1e-5, beta_1=0.9, beta_2=0.999)
+    x = Conv2D(1024, (2, 2), strides=(1, 1))(last)
+    x = Flatten()(x)
+    x = Dense(512, activation='relu')(x)
+    x = Dropout(rate=0.15)(x)
+    x = Dense(256, activation='relu')(x)
+    x = Dropout(rate=0.25)(x)
+    x = Dense(2, activation='softmax')(x)
 
+    # Compiling model
+    model = Model(inputs=tmodel_base.input, outputs=x)
+    model.summary()
 
-    model.compile(optimizer = opt1 , loss = 'categorical_crossentropy', metrics = ['accuracy'])
+    opt1 = Adam(lr=1e-4, beta_1=0.9, beta_2=0.999)
+    resnet_checkpoint = ModelCheckpoint("resnetbest.h5", monitor='val_accuracy', verbose=1,
+                                        save_best_only=True, mode='auto', period=1)
+
+    model.compile(optimizer=opt1, loss='categorical_crossentropy', metrics=['accuracy'])
+
     return model
 
 
-model = vgg16()
+model = resnet50()
 
 # reduce learning rate and configure early stop
 reduce_learning_rate = ReduceLROnPlateau(monitor='val_loss',
@@ -157,7 +164,7 @@ early_stop = tf.keras.callbacks.EarlyStopping(
     monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='auto',
     baseline=None, restore_best_weights=True
 )
-checkpoint = ModelCheckpoint('kmeans_data_augm_unfreezed_vgg16.h5', verbose=1, save_best_only=True)
+checkpoint = ModelCheckpoint('kmeans_data_augm_freezed_resnet50.h5', verbose=1, save_best_only=True)
 # Generates batches of image data with data augmentation
 datagen = ImageDataGenerator(rotation_range=20,  # Degree range for random rotations
                              width_shift_range=0.2,  # Range for random horizontal shifts
@@ -224,7 +231,7 @@ plt.legend(loc = 4)
 plt.show()
 
 # Last Model
-model = load_model('kmeans_data_augm_unfreezed_vgg16.h5')
+model = load_model('kmeans_data_augm_freezed_resnet50.h5')
 final_loss, final_accuracy = model.evaluate(X_val, Y_val)
 print('Final Loss: {}, Final Accuracy: {}'.format(final_loss, final_accuracy))
 print('Precision:', precision_recall_fscore_support(Y_true, Y_pred, average='weighted')[0])
