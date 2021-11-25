@@ -152,6 +152,34 @@ def resnet50():
 
 model = resnet50()
 
+# reduce learning rate and configure early stop
+reduce_learning_rate = ReduceLROnPlateau(monitor='val_loss',
+                                         factor=0.1,
+                                         patience=5,
+                                         cooldown=2,
+                                         min_lr=1e-8,
+                                         verbose=1)
+
+early_stop = tf.keras.callbacks.EarlyStopping(
+    monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='auto',
+    baseline=None, restore_best_weights=True
+)
+checkpoint = ModelCheckpoint('kmeans_data_augm_unfreezed_resnet50.h5', verbose=1, save_best_only=True)
+# Generates batches of image data with data augmentation
+datagen = ImageDataGenerator(rotation_range=20,  # Degree range for random rotations
+                             width_shift_range=0.2,  # Range for random horizontal shifts
+                             height_shift_range=0.2,  # Range for random vertical shifts
+                             horizontal_flip=True)  # Randomly flip inputs horizontally
+
+datagen.fit(X_train)
+
+# Fits the model on batches with real-time data augmentation
+hist = model.fit_generator(datagen.flow(X_train, Y_train, batch_size=32),
+                           steps_per_epoch=X_train.shape[0] // BATCH_SIZE,
+                           epochs=EPOCHS,
+                           verbose=1,
+                           callbacks=[reduce_learning_rate, checkpoint],
+                           validation_data=(X_val, Y_val))
 
 final_loss, final_accuracy = model.evaluate(X_val, Y_val)
 print('Final Loss: {}, Final Accuracy: {}'.format(final_loss, final_accuracy))
