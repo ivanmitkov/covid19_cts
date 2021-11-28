@@ -119,23 +119,23 @@ n_classes=2
 """# **Evaluation**"""
 
 our_vgg = tf.keras.models.load_model('kmeans_data_augm_unfreezed_vgg16.h5')
-our_xcep = tf.keras.models.load_model('kmeans_data_augm_unfreezed_xception.h5')
-our_res = tf.keras.models.load_model('kmeans_data_augm_unfreezed_resnet50.h5')
+our_dense = tf.keras.models.load_model('densenet_unfreeze.h5')
+our_incep = tf.keras.models.load_model('inception_unfreeze.h5')
 
 print("-"*30)
 print("VGG16")
 print(our_vgg.evaluate(X_val, Y_val))
 print("-"*30)
-print("Xception")
-print(our_xcep.evaluate(X_val, Y_val))
+print("DenseNet")
+print(our_dense.evaluate(X_val, Y_val))
 print("-"*30)
-print("ResNet50")
-print(our_res.evaluate(X_val, Y_val))
+print("Inception")
+print(our_incep.evaluate(X_val, Y_val))
 print("-"*30)
 
 our_vgg.trainable = False
-our_xcep.trainable = False
-our_res.trainable = False
+our_dense.trainable = False
+our_incep.trainable = False
 
 #Delete unused variables and clear garbage values
 #del history1, model1, hist_df
@@ -163,7 +163,7 @@ def stacking_ensemble(members,input_shape,n_classes):
 
     return stacked_model
 
-members =[our_vgg, our_xcep, our_res]
+members =[our_vgg, our_dense, our_incep]
 
 batch=16
 optimizer= Adam(lr=5e-5, beta_1=0.9, beta_2=0.999)
@@ -221,7 +221,7 @@ def confusion(model):
   print(classification_report(y_true, y_pred, digits=6))
   print("--"*30)
 
-our_models =  {"VGG16": our_vgg, "Xception": our_xcep, "ResNet50": our_res, "Stacked": stacked}
+our_models =  {"VGG16": our_vgg, "DenseNet": our_dense, "Inception": our_incep, "Stacked": stacked}
 for m in our_models:
   print("--"*30)
   print(m)
@@ -229,7 +229,7 @@ for m in our_models:
   confusion(our_models[m])
 
 # compare similar metrics to the previous approaches
-final_loss, final_accuracy = stacked.evaluate(X_val, Y_val)
+```final_loss, final_accuracy = stacked.evaluate(X_val, Y_val)
 Y_pred = stacked.predict(X_val)
 Y_pred = np.argmax(Y_pred, axis=1)
 
@@ -237,7 +237,7 @@ print('Final Loss: {}, Final Accuracy: {}'.format(final_loss, final_accuracy))
 print('Precision:', precision_recall_fscore_support(y_true, Y_pred, average='weighted')[0])
 print('Recall:', precision_recall_fscore_support(y_true, Y_pred, average='weighted')[1])
 print('F1:', precision_recall_fscore_support(y_true, Y_pred, average='weighted')[2])
-
+```
 # graphs
 cm = confusion_matrix(y_true, Y_pred)
 plt.figure(figsize=(12, 12))
