@@ -94,7 +94,7 @@ X0 = X[train['DiseaseID'] == 0, :, :].reshape(len(X[train['DiseaseID'] == 0, :, 
 X1 = X[train['DiseaseID'] == 1, :, :].reshape(len(X[train['DiseaseID'] == 1, :, :]), -1)
 
 k = 60
-kmeans = KMeans(k)
+kmeans = KMeans(k, random_state = SEED)
 cluster0 = kmeans.fit_predict(X0)
 cluster1 = kmeans.fit_predict(X1)
 cluster1 += k
@@ -108,11 +108,15 @@ train_idx, val_idx = next(GroupShuffleSplit(test_size = 0.2,
 
 X_train, X_val, Y_train, Y_val = X[train_idx], X[val_idx], y[train_idx], y[val_idx]
 
+# save train-val indexes
+pd.Series(train_idx).to_csv('training_indexes_vgg16.csv')
+pd.Series(val_idx).to_csv('validation_indexes_vgg16.csv')
+
+# validate data shape
 print(f'X_train:', X_train.shape)
 print(f'X_val:', X_val.shape)
 print(f'Y_train:', Y_train.shape)
 print(f'Y_val:', Y_val.shape)
-
 
 """# **VGG16**"""
 EPOCHS = 50
