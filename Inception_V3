@@ -1,0 +1,294 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import cv2
+import os
+from tensorflow import keras
+from tqdm import tqdm
+import tensorflow
+from sklearn.metrics import confusion_matrix
+from tensorflow.keras.models import *
+from tensorflow.keras.layers import *
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.metrics import categorical_crossentropy
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from sklearn.metrics import confusion_matrix
+from tensorflow.keras.applications.densenet import DenseNet121
+from tensorflow.keras.callbacks import *
+from tensorflow.keras import backend as K
+from tensorflow.keras.utils import plot_model
+K.clear_session()
+import itertools
+import matplotlib.pyplot as plt
+import cv2
+import matplotlib.cm as cm
+
+from tensorflow.keras.utils import to_categorical
+from sklearn.preprocessing import LabelBinarizer,LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+
+import tensorflow as tf
+from tensorflow.keras.applications import *
+import tensorflow as tf
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import make_scorer, accuracy_score, roc_auc_score, roc_curve
+from sklearn.cluster import KMeans
+from sklearn.metrics import precision_recall_fscore_support
+
+
+#Load Data
+disease_types = ['COVID', 'non-COVID']
+data_dir = r'D:/COVID_NON_COVID_IMAGES/archive'
+train_dir = os.path.join(data_dir)
+
+train_data = []
+for defects_id, sp in enumerate(disease_types):
+    for file in os.listdir(os.path.join(train_dir, sp)):
+        train_data.append(['{}/{}'.format(sp, file), defects_id, sp])
+
+train = pd.DataFrame(train_data, columns=['File', 'DiseaseID', 'Disease Type'])
+train.head()
+
+train.info()
+
+SEED = 42
+train = train.sample(frac=1, random_state=SEED)
+train.index = np.arange(len(train))  # Reset indices
+train.head()
+
+train.info()
+
+
+IMAGE_SIZE = 224
+
+
+def read_image(filepath):
+    return cv2.imread(os.path.join(data_dir, filepath))  # Loading a color image is the default flag
+
+
+# Resize image to target size
+def resize_image(image, image_size):
+    return cv2.resize(image.copy(), image_size, interpolation=cv2.INTER_AREA)
+
+
+X = np.zeros((train.shape[0], IMAGE_SIZE, IMAGE_SIZE, 3))
+for i, file in tqdm(enumerate(train['File'].values)):
+    image = read_image(file)
+    if image is not None:
+        X[i] = resize_image(image, (IMAGE_SIZE, IMAGE_SIZE))
+# Normalize the data
+X = X / 255.
+print('Train Shape: {}'.format(X.shape))
+
+y = train['DiseaseID'].values
+y = to_categorical(y, num_classes=2)
+print(y.shape)
+
+BATCH_SIZE = 64
+
+# Split the train and validation sets through kmeans
+X0 = X[train['DiseaseID'] == 0, :, :].reshape(len(X[train['DiseaseID'] == 0, :, :]), -1)
+X1 = X[train['DiseaseID'] == 1, :, :].reshape(len(X[train['DiseaseID'] == 1, :, :]), -1)
+
+k = 60
+kmeans = KMeans(k, random_state = SEED)
+cluster0 = kmeans.fit_predict(X0)
+cluster1 = kmeans.fit_predict(X1)
+cluster1 += k
+cluster = np.concatenate([cluster0, cluster1])
+
+np.random.seed(42)
+
+rows = 5 
+cols = 5
+
+fig, ax = plt.subplots(rows, cols, figsize=(12, 12))
+for i in range(rows):
+    clt = np.random.randint(0, 2 * k)
+    clt_idx = np.random.choice(np.where(cluster == clt)[0], cols, replace = True)
+    X_clt = X[clt_idx]
+    for j in range(cols):
+        ax[i, j].set_xticks([])
+        ax[i, j].set_yticks([])
+        ax[i, j].set_title([f'Cluster {clt}'])
+        ax[i, j].imshow(X_clt[j])
+
+# split data
+from sklearn.model_selection import train_test_split, GroupShuffleSplit, GroupKFold
+train_idx, val_idx = next(GroupShuffleSplit(test_size = 0.2,
+                                            n_splits = 2,
+                                            random_state = SEED).split(X, groups = cluster))
+
+X_train, X_val, Y_train, Y_val = X[train_idx], X[val_idx], y[train_idx], y[val_idx]
+
+# save train-val indexes
+pd.Series(train_idx).to_csv('training_indexes_Incv3.csv')
+pd.Series(val_idx).to_csv('validation_indexes_Incv3.csv')
+
+# validate data shape
+print(f'X_train:', X_train.shape)
+print(f'X_val:', X_val.shape)
+print(f'Y_train:', Y_train.shape)
+print(f'Y_val:', Y_val.shape)
+
+
+EPOCHS = 50
+
+
+tmodel_base = tf.keras.applications.InceptionV3(include_top = False,
+                                                weights = 'imagenet')
+  
+inp = Input(shape = (IMAGE_SIZE, IMAGE_SIZE, 3))
+x = Conv2D(3, (3, 3), padding = 'same')(inp)
+x = tmodel_base(x)
+x = GlobalAveragePooling2D()(x)    
+x = BatchNormalization()(x)
+x = Dropout(0.25)(x)
+x = Dense(1024, activation = 'relu')(x)
+x = BatchNormalization()(x)
+x = Dropout(0.25)(x)
+out = Dense(2, activation = 'softmax')(x)
+
+model = Model(inputs = inp, outputs = out)
+    
+model.summary()
+
+plot_model(model, 
+           show_shapes = True, 
+           show_layer_names = True, 
+           rankdir = 'TB', 
+           expand_nested = False, 
+           dpi = 60)
+
+datagen = ImageDataGenerator(rotation_range=20,  # Degree range for random rotations
+                             width_shift_range=0.2,  # Range for random horizontal shifts
+                             height_shift_range=0.2,  # Range for random vertical shifts
+                             horizontal_flip=True)  # Randomly flip inputs horizontally
+
+datagen.fit(X_train)
+
+reduce_learning_rate = ReduceLROnPlateau(monitor='val_loss',
+                                         factor=0.1,
+                                         patience=5,
+                                         cooldown=2,
+                                         min_lr=1e-8,
+                                         verbose=1)
+opt1 = Adam(learning_rate=1e-4, beta_1=0.9, beta_2=0.999)
+inception_checkpoint = ModelCheckpoint("Inception_unfreeze_Kcorection.h5",verbose=1, save_best_only=True) 
+model.compile(optimizer = opt1 , loss = 'categorical_crossentropy', metrics = ['accuracy'])
+
+hist = model.fit(datagen.flow(X_train, Y_train, batch_size=64),
+                           steps_per_epoch=X_train.shape[0] // BATCH_SIZE,
+                           epochs=EPOCHS, 
+                           callbacks=[reduce_learning_rate,inception_checkpoint], 
+                           validation_data = (X_val, Y_val))
+
+final_loss, final_accuracy = model.evaluate(X_val, Y_val)
+print('Final Loss: {}, Final Accuracy: {}'.format(final_loss, final_accuracy))
+
+Y_pred = model.predict(X_val)
+
+Y_pred = np.argmax(Y_pred, axis=1)
+Y_true = np.argmax(Y_val, axis=1)
+
+cm = confusion_matrix(Y_true, Y_pred)
+plt.figure(figsize=(8, 8))
+ax = sns.heatmap(cm, cmap=plt.cm.Greens, annot=True, square=True, xticklabels=disease_types, yticklabels=disease_types,
+                 fmt='g')
+ax.set_ylabel('Actual', fontsize=24)
+ax.set_xlabel('Predicted', fontsize=24)
+
+# accuracy plot
+plt.plot(hist.history['accuracy'])
+plt.plot(hist.history['val_accuracy'])
+plt.title('model accuracy')
+plt.ylabel('accuracy')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
+
+# loss plot
+plt.plot(hist.history['loss'])
+plt.plot(hist.history['val_loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
+
+#auc
+pred_proba = model.predict(X_val)
+pred = pred_proba[:, 1]
+auc_score = roc_auc_score(Y_true, pred)
+fpr, tpr, th = roc_curve(Y_true, pred)
+print('AUC Score:\t', round(auc_score, 2))
+plt.figure(figsize = (7, 5))
+plt.title('ROC Curve')
+plt.plot(fpr, tpr, 'r')
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlabel('False Positive')
+plt.ylabel('True Positive')
+plt.legend(loc = 4)
+plt.show()
+
+TN = cm[0][0]
+print("True Negative:", TN)
+FN = cm[1][0]
+print("False Negative: ", FN)
+TP = cm[1][1]
+print("True Positive:", TP)
+FP = cm[0][1]
+print("False Positive: ", FP)
+
+# Sensitivity, hit rate, recall, or true positive rate
+TPR = TP/(TP+FN)
+print("Sensitivity or True Positive Rate (TPR =  TP/(TP+FN)): ", round((TPR), 3)*100,'%')
+# Specificity or true negative rate
+TNR = TN/(TN+FP)
+print("Specifity or True Negative Rate (TNR =  TN/(TN+FP)): ", round((TNR), 4)*100,'%')
+
+# Precision or positive predictive value
+PPV = TP/(TP+FP)
+print("Positive Prediction Value or Precision = TP/(TP+FP): ", round((PPV), 4)*100, '%')
+
+      # Negative predictive value
+NPV = TN/(TN+FN)
+print("Negative Predictive Value = TN/(TN+FN): ", round((NPV), 4)*100, '%')
+
+# Fall out or false positive rate
+FPR = FP/(FP+TN)
+print("False Positive Rate = FP/(FP+TN): ", round((FPR), 4)*100, '%')
+# False negative rate
+FNR = FN/(TP+FN)
+print("False Negative Rate = FN/(TP+FN): ", round((FNR), 3)*100, '%')
+
+# False discovery rate
+FDR = FP/(TP+FP)
+print("False Discovery Rate = FP/(TP+FP): ", round((FDR), 3)*100, '%')
+
+#Overall accuracy
+ACC = (TP+TN)/(TP+FP+FN+TN)
+print("Overall Accuracy (ACC =(TP+TN)/(TP+FP+FN+TN): ", ACC)
+
+def threshold_optimisation(y_true, y_pred, thresholds):
+    best_th = thresholds[0]
+    best_acc = accuracy_score(y_true, np.where(y_pred > thresholds[0], 1, 0))
+    for th in thresholds[1:]:
+        acc = accuracy_score(y_true, np.where(y_pred > th, 1, 0))
+        if acc > best_acc:
+            best_th = th
+            best_acc = acc
+    return best_acc, best_th
+best_acc, best_th = threshold_optimisation(Y_val, pred_proba, th)
+print('Best Accuracy:\t', round(best_acc, 2))
+print('Best Threshold:\t', best_th)
+
+model = load_model('Inception_unfreeze_Kcorection.h5')
+final_loss, final_accuracy = model.evaluate(X_val, Y_val)
+print('Final Loss: {}, Final Accuracy: {}'.format(final_loss, final_accuracy))
+print('Precision:', precision_recall_fscore_support(Y_true, Y_pred, average='weighted')[0])
+print('Recall:', precision_recall_fscore_support(Y_true, Y_pred, average='weighted')[1])
+print('F1:', precision_recall_fscore_support(Y_true, Y_pred, average='weighted')[2])
