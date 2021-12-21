@@ -93,24 +93,25 @@ BATCH_SIZE = 64
 X0 = X[train['DiseaseID'] == 0, :, :].reshape(len(X[train['DiseaseID'] == 0, :, :]), -1)
 X1 = X[train['DiseaseID'] == 1, :, :].reshape(len(X[train['DiseaseID'] == 1, :, :]), -1)
 
+
 k = 60
-kmeans = KMeans(k)
+kmeans = KMeans(k, random_state = SEED)
 cluster0 = kmeans.fit_predict(X0)
 cluster1 = kmeans.fit_predict(X1)
 cluster1 += k
 cluster = np.concatenate([cluster0, cluster1])
 
 # split data
+from sklearn.model_selection import train_test_split, GroupShuffleSplit, GroupKFold
 train_idx, val_idx = next(GroupShuffleSplit(test_size = 0.2,
                                             n_splits = 2,
                                             random_state = SEED).split(X, groups = cluster))
 
 X_train, X_val, Y_train, Y_val = X[train_idx], X[val_idx], y[train_idx], y[val_idx]
 
-print(f'X_train:', X_train.shape)
-print(f'X_val:', X_val.shape)
-print(f'Y_train:', Y_train.shape)
-print(f'Y_val:', Y_val.shape)
+# save train-val indexes
+pd.Series(train_idx).to_csv('training_indexes_stacking.csv')
+pd.Series(val_idx).to_csv('validation_indexes_stacking.csv')
 
 NO_OF_CHANNELS = 3
 input_shape=(IMAGE_SIZE, IMAGE_SIZE, NO_OF_CHANNELS)
@@ -118,9 +119,9 @@ n_classes=2
 
 """# **Evaluation**"""
 
-our_vgg = tf.keras.models.load_model('kmeans_data_augm_unfreezed_vgg16.h5')
-our_dense = tf.keras.models.load_model('densenet_unfreeze.h5')
-our_incep = tf.keras.models.load_model('inception_unfreeze.h5')
+our_vgg = tf.keras.models.load_model('kmeans_data_augm_vgg16_2.h5')
+our_dense = tf.keras.models.load_model('Densenetunfreeze_Kcorrect.h5')
+our_incep = tf.keras.models.load_model('Inception_unfreeze_Kcorection.h5')
 
 print("-"*30)
 print("VGG16")
@@ -171,7 +172,7 @@ optimizer= Adam(lr=5e-5, beta_1=0.9, beta_2=0.999)
 stacked = stacking_ensemble(members, input_shape, n_classes)
 print(stacked.summary())
 
-stacked_checkpoint = ModelCheckpoint("stacked_best.h5", monitor='val_accuracy', verbose=1,
+stacked_checkpoint = ModelCheckpoint("stacked_best_corrected.h5", monitor='val_accuracy', verbose=1,
     save_best_only=True, mode='auto', period=1)
 
 # reduce learning rate and configure early stop
@@ -198,7 +199,7 @@ stacked.evaluate(X_val, Y_val)
 #del stacked_hist, stacked
 gc.collect()
 
-stacked = tf.keras.models.load_model("stacked_best.h5")
+stacked = tf.keras.models.load_model("stacked_best_corrected.h5")
 print("-.-"*30)
 print('Model Name: Stacked')
 print(stacked.evaluate(X_val, Y_val))
@@ -229,7 +230,7 @@ for m in our_models:
   confusion(our_models[m])
 
 # compare similar metrics to the previous approaches
-```final_loss, final_accuracy = stacked.evaluate(X_val, Y_val)
+final_loss, final_accuracy = stacked.evaluate(X_val, Y_val)
 Y_pred = stacked.predict(X_val)
 Y_pred = np.argmax(Y_pred, axis=1)
 
@@ -237,7 +238,7 @@ print('Final Loss: {}, Final Accuracy: {}'.format(final_loss, final_accuracy))
 print('Precision:', precision_recall_fscore_support(y_true, Y_pred, average='weighted')[0])
 print('Recall:', precision_recall_fscore_support(y_true, Y_pred, average='weighted')[1])
 print('F1:', precision_recall_fscore_support(y_true, Y_pred, average='weighted')[2])
-```
+
 # graphs
 cm = confusion_matrix(y_true, Y_pred)
 plt.figure(figsize=(12, 12))
@@ -271,7 +272,7 @@ pred = pred_proba[:, 1]
 from sklearn.metrics import make_scorer, accuracy_score, roc_auc_score, roc_curve
 auc_score = roc_auc_score(y_true, pred)
 fpr, tpr, th = roc_curve(y_true, pred)
-print('AUC Score:\t', round(auc_score, 2))
+print('AUC Score:\t', round(auc_score, 5))
 plt.figure(figsize = (7, 5))
 plt.title('ROC Curve')
 plt.plot(fpr, tpr, 'r')
